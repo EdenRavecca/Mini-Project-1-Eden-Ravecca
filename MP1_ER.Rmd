@@ -8,71 +8,69 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
-# Mini Project 1 using GBIF Prairie Falcon Data, NLCD Land Cover Data, Prism Climate Data, Tidycensus Cenus Data (by county), and TIGER/Line State shapefiles.  
+# Mini Project 1 using GBIF Prairie Falcon Data, NLCD Land Cover Data, USFS National Forest Climate Change Data, Tidycensus Cenus Data (by county), and TIGER/Line State shapefiles.  
 
-### <span style="color: navy;"> For the mini project I am interested in exploring whether land cover, precipitation, and human population influences the liklihood of Prairie Falcon occurrence in Western US States. I downloaded Prairie Falcon data from GBIF, Land Cover data from NLCD, precipitation data from PRISM, western states boundary shapefiles from TIGER/Line, and census data from Tidycensus.</span>
+### <span style="color: navy;"> For the mini project I am interested in exploring whether land cover, historical precipitation averages, and human population influence the liklihood of Prairie Falcon occurrence in Western US States. I downloaded Prairie Falcon data from GBIF, Land Cover data from NLCD, precipitation data from USFS National Forest Climate Change Maps, western states boundary shapefiles from TIGER/Line, and census data from Tidycensus.</span>
 
-#### <span style="color: navy;"> Prairie Falcons are endemic to western North America and are typically found in deserts ranging from Southern Canada down to Northern Mexico. Prairie Falcons are rarely seen east of the Mississippi River. They are more commonly found in arid climates, landscapes dominated by shrubs and lacking trees, and are a rare sighting in densely populated areas (unlike other falcons such as Peregrines and Kestrels). I am interested in understanding if their occurrence in the west is driven by low annual precipitation, land cover types, areas with low human population, or some combination of those variables.</span>    
+#### <span style="color: navy;"> Prairie Falcons are endemic to western North America and are typically found in deserts ranging from Southern Canada to Northern Mexico. Prairie Falcons are rarely seen east of the Mississippi River. They are more commonly found in arid climates, landscapes dominated by shrubs and lacking trees, and are a rare sighting in densely populated areas (unlike other falcons such as Peregrines and Kestrels). I am interested in exploring if their occurrence in the west is driven by low annual precipitation (historical average), land cover types, areas with low human population, or some combination of those variables.</span>    
 
-#### <span style="color: navy;">To begin this project, I downloaded the relevant data from free internet sources. Due to the computational demands of using large spatial and temporal scales, I limited the data to only western states (from the Rocky Mountains to the pacific coast) and focused on a single year- 2016. The dependent variable is Prairie Falcon occurrence observations in 2016. The tabular data I am using includes: states (western US), date (year 2016), counties population. The spatial data includes: land cover 2016, climate (annual rainfall 2016), state polygons, county polygons.</span>    
-
-#### <span style="color: navy;">I ran into some challenges when cropping the NLCD data to the 11 western states I selected for the study area (Idaho, Montana, Wyoming, Utah, Nevada, Arizona, New Mexico, Colorado, California, Oregon, Washington). I attempted several different methods, both using Raster and Terra, but was not successful. Once I am able to crop the NLCD raster to the same extent as the western states shapefiles, I plan to extract land cover values (likely mode values- so that the aggregated cell is representative of the most common land cover type) at 4 km resolution to match the climate data resolution. I also plan to crop the precipitation raster to the same extent and extract mean annual precipitation values. I will also create a blank raster with, 4 km resolution grid cells, that will be used to add the average population size within each cell using the Tidycensus data. Those rasters will be stacked and hopefully I can pull values from cells that contain buffered random samples points from the Prairie Falcon data. The falcon data will be spatially joined with the raster stack.</span>  
-
+#### <span style="color: navy;">To begin this project, I downloaded the relevant data from free internet sources. Due to the computational demands of using large spatial and temporal scales, I limited the data to only western states (from the Rocky Mountains to the pacific coast) and focused on a single year for falcon occurrence and land cover- 2016. The dependent variable is Prairie Falcon occurrence observations in 2016. The tabular data I am using includes: states (western US), date (year 2016), counties population. The spatial data includes: land cover 2016, climate (historical precipitation average), state polygons, county polygons.</span>    
 
 ```{r, load packages, warning=FALSE}
 library(tidyverse)
 library(sf)
 library(terra)
 library(tidycensus)
-library(raster)
-library(prism)
 ```
 
-```{r, Prairie Falcon data, cache=TRUE}
+```{r, land cover data}
+nlcd_data_terr <- terra::rast("/opt/data/MP/Ravecca_Eden_MP/NLCD/nlcd_2016_land_cover_l48_20210604.img") 
+nlcd_data_terr2 <- terra::rast("/opt/data/MP/Ravecca_Eden_MP/NLCD/nlcd_2016_land_cover_l48_20210604.img") 
+```
+
+```{r, Prairie Falcon data}
 falcon_csv <- read.csv("/opt/data/MP/Ravecca_Eden_MP/FalconData/PRFA_Data.csv")
 states <- c( "Idaho", "Montana", "Wyoming", "Utah", "Nevada", "Arizona", "New Mexico", 
              "Colorado", "California", "Oregon", "Washington" ) # to filter states of interest at once
 west_prfa <- falcon_csv %>% 
   dplyr::filter(., stateProvince %in% states) %>% # keep western states
   dplyr::select(., c(occurrenceID, locality, stateProvince, decimalLatitude, decimalLongitude, eventDate,
-              day, month, year)) %>% # keep relevant columns
+                     day, month, year)) %>% # keep relevant columns
   dplyr::filter(., year == "2016") %>% # keep only 2016 observations
   dplyr::rename(., c(state = stateProvince, lat = decimalLatitude, lon = decimalLongitude, date = eventDate, ID
-              = occurrenceID)) # change column names to make sense
+                     = occurrenceID)) # change names to make sense
 unique(west_prfa$year) # check
+prfa.sf <- st_as_sf(west_prfa, coords = c("lon", "lat"), crs = 4326) # convert prfa gps points to sf object
+prfa <- st_transform(prfa.sf, crs= crs(nlcd_data_terr))
 ```
 
-```{r, land cover data, cache=TRUE}
-nlcd_data <- raster::raster("/opt/data/MP/Ravecca_Eden_MP/NLCD/nlcd_2016_land_cover_l48_20210604.img") 
-nlcd_data_terr <- terra::rast("/opt/data/MP/Ravecca_Eden_MP/NLCD/nlcd_2016_land_cover_l48_20210604.img")# had to change pathnames
-crs(nlcd_data_terr) # what is the CRS
-```
 
-```{r, states data, cache=TRUE}
+
+```{r, states data}
 states_data <- st_read("/opt/data/MP/Ravecca_Eden_MP/StatesPoly/tl_2012_us_state/tl_2012_us_state.shp")
-colnames(states_data)
 w_states_shp <- states_data %>%
   dplyr::select(., c(STUSPS, NAME, geometry)) %>% # keep relevant columns
   dplyr::filter(., NAME %in% states) %>% # keep western states of interest
   dplyr::rename(., c(States = NAME, State_Abbreviation = STUSPS))
-plot(w_states_shp) # check
+plot(w_states_shp, main= "Western US States") # check
 all(st_is_valid(w_states_shp)) # make sure geometries are valid; TRUE
 w_states_reproj <-  st_transform(w_states_shp, crs = crs(nlcd_data_terr)) # reproject states polys to match NLCD data
-st_crs(w_states_reproj) # check
-plot(nlcd_data_terr)
+plot(nlcd_data_terr, main= "Land Cover Classes in US")
 ```
+
 ```{r}
 plot(nlcd_data_terr)
 plot(w_states_reproj, add = TRUE)
 ```
 
-```{r, census data, cache=TRUE}
-census_api_key("ccd5de8eb03adae16092bc5e1c6c40cb104f1e97")
-readRenviron("~/.Renviron")
+
+```{r, census data}
+census_api_key("ccd5de8eb03adae16092bc5e1c6c40cb104f1e97", install = TRUE, overwrite = TRUE)
+#readRenviron("~/.Renviron")
 options(tigris_use_cache = TRUE)
 reg.pop <- tidycensus::get_estimates(geography = "county",
                                      product = "population",
-                                     state = c( "ID", "MT", "WY", "UT", "NV", "AZ", "NM", "CO", "OR", "WA", "CA" ),
+                                     state = c( "ID", "MT", "WY", "UT", "NV", "AZ", "NM", "CO", "OR", "WA", "CA" ), 
                                      year = 2016,
                                      key = key,
                                      geometry = TRUE,
@@ -81,52 +79,83 @@ reg.pop <- tidycensus::get_estimates(geography = "county",
 
 w.cntypop <- filter(reg.pop, variable == "POP") # keep population value only (remove density)
 unique(w.cntypop$variable)
-all(st_is_valid(w.cntypop)) # make sure geometries are valid; TRUE
+head(w.cntypop)
+all(st_is_valid(w.cntypop))
 st_crs(w.cntypop) == st_crs(w_states_reproj) # check CRS matches
 ```
 
-```{r, crop NLCD raster}
+```{r, population summary}
+cp.summary <- w.cntypop %>% 
+  group_by(NAME) %>% 
+  summarize(., avg_pop = mean(value)) %>%
+  separate(NAME,c("county","state"),sep=",")
+```
+
+```{r, climate data}
+precip_hist_terr <- terra::rast("/opt/data/MP/Ravecca_Eden_MP/NFCC_data/Ppt_annual_historical/Ppt_annual_historical.tif") 
+x <- rast(extent= ext(nlcd_data_terr), crs= crs(nlcd_data_terr), resolution= 771)
+ppt_hist_reproj <- terra::project(precip_hist_terr, x) # project to NLCD crs
+plot(ppt_hist_reproj, main= "Historical Annual Precipitation Average in US")
+```
+
+```{r, crop rasters}
 w.states.vect <- as(w_states_reproj, "SpatVector") # turn states shapefiles into SpatVector for cropping (in Terra)
-terra::ext(w.states.vect)
-terra::ext(w_states_reproj)
-# nlcd.crop <- terra::crop(nlcd_data_terr, w.states.vect)
-# The crop function has been unsuccessful, both in raster and terra. After spending a lot of time troubleshooting and trying various ways to crop NLCD raster (see script) I elected to move on. I will be trying to make this work somehow, but I suspect the issue lies in the states shapefiles- although the geometries are valid, re-projects well, looks good on a map. After further investigating the issue, it may be a problem with RAM. I am currently working with Kyle to (hopefully) find a solution.
+plot(ppt_hist_reproj)
+plot(w.states.vect, add= TRUE)
+nlcd.fullres.crop <- terra::crop(nlcd_data_terr2, w.states.vect) # crop NLCD full res SpatRaster to States poly
+ppt.crop <- terra::crop(ppt_hist_reproj, w.states.vect) # crop Precip. SpatRaster to States poly
 ```
 
-```{r, climate data, cache=TRUE}
-prism_set_dl_dir("/opt/data/MP/Ravecca_Eden_MP/PRISM_data") # where to put downloaded files
-ann_rf <- get_prism_annual(type = "ppt", years = 2016, keepZip = FALSE) # which prism data to download
-prism_archive_ls() # view downloaded files
-pd_to_file(prism_archive_ls()) # path for other packages
-pd_get_name(prism_archive_ls()) # description of downloaded files
-ppt_2016 <- prism_archive_subset("ppt", "annual", years = 2016) # get raster of ppt 2016
+```{r, plot cropped rasters}
+plot(ppt.crop, main= "Historical Precipitation Average in Western US States")
+plot(w.states.vect, add= TRUE)
 ```
 
-```{r, make precip rasters, cache=TRUE}
-pd_image(ppt_2016) # make raster plot
-str(ppt_2016)
-ppt_rastpath <- pd_to_file(ppt_2016) # path to data for loading with raster
-ppt_2016_rast <- raster(ppt_rastpath) # read with Raster package
-plot(ppt_2016_rast)
-crs(ppt_2016_rast)
-# ppt_2016_reproj <- projectRaster(ppt_2016_rast, nlcd_data) # caused R to crash, could not successfully complete, assuming because of massive size
+```{r, check plots}
+plot(nlcd.fullres.crop, main= "Land Cover Classes in Western US")
+plot(w.states.vect, add= TRUE)
+```
+
+```{r, collapse=TRUE}
+res(nlcd.fullres.crop) == res(ppt.crop)
+crs(nlcd.fullres.crop) == crs(ppt.crop)
+```
+
+```{r, aggregate NLCD raster, collapse = TRUE}
+nlcd.cats <- terra::cats(nlcd_data_terr2, layer=1) # define nlcd categories
+nlcd_modeval <- terra::aggregate(nlcd.fullres.crop, fact=26, fun="modal") # aggregate to 780 m resolution and assign modal value from NLCD classes
+print(nlcd_modeval)
+plot(nlcd_modeval, type="classes")
+```
+
+```{r, resample NLCD raster, collapse = TRUE}
+m <- rast(extent= ext(w.states.vect), crs= crs(nlcd.fullres.crop), resolution= 771) # blank raster for template
+res(m)
+crs(nlcd.fullres.crop) == crs(m)
+ext(ppt.crop) == ext(m)
+nlcd_771_mode <- terra::resample(nlcd_modeval, m, method= "near") # resample to 771 m resolution and assign NLCD value based on "nearest neighbor"
+levels(nlcd_771_mode) <- nlcd.cats # nlcd Land Cover classes as levels
+is.factor(nlcd_771_mode)
+plot(nlcd_771_mode, type="classes", main= "Modal Land Cover Types in Western US States 771x771 km")
+```
+
+```{r, spatial join}
+st_crs(prfa) == st_crs(cp.summary)
+cp_prfa <- st_join(prfa, cp.summary, by = "state", left=TRUE)
+cp_prfa.vect <- as(cp_prfa, "SpatVector") # turn county population & prfa data into SpatVector for rasterize (in Terra)
+head(cp_prfa.vect)
+```
+
+```{r, extract}
+ppt_values <- terra::extract(ppt.crop, cp_prfa.vect, fun= mean, method= "bilinear", na.rm=T)
+lc_values <- terra::extract(nlcd_771_mode, cp_prfa.vect, fun= max, method= "simple", na.rm=T)
+ppt_lc_val <- left_join(ppt_values, lc_values, by= "ID")
+head(ppt_lc_val)
 ```
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+__Obviously you are working hard to get these done, but you didn't include the necessary number of tabular datasets and its not really clear what the relevant datasets are or why__
 
 
 
