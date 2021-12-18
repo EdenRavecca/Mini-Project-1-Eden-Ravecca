@@ -43,8 +43,8 @@ unique(west_prfa$year) # check
 ```
 
 ```{r, land cover data, cache=TRUE}
-nlcd_data <- raster::raster("/opt/data/MP/Ravecca_Eden_MP/NLCD/nlcd_2016_land_cover_l48.img") 
-nlcd_data_terr <- terra::rast("/opt/data/MP/Ravecca_Eden_MP/NLCD/nlcd_2016_land_cover_l48.img")
+nlcd_data <- raster::raster("/opt/data/MP/Ravecca_Eden_MP/NLCD/nlcd_2016_land_cover_l48_20210604.img") 
+nlcd_data_terr <- terra::rast("/opt/data/MP/Ravecca_Eden_MP/NLCD/nlcd_2016_land_cover_l48_20210604.img")# had to change pathnames
 crs(nlcd_data_terr) # what is the CRS
 ```
 
@@ -67,7 +67,7 @@ plot(w_states_reproj, add = TRUE)
 ```
 
 ```{r, census data, cache=TRUE}
-census_api_key("ccd5de8eb03adae16092bc5e1c6c40cb104f1e97", install = TRUE, overwrite = TRUE)
+census_api_key("ccd5de8eb03adae16092bc5e1c6c40cb104f1e97")
 readRenviron("~/.Renviron")
 options(tigris_use_cache = TRUE)
 reg.pop <- tidycensus::get_estimates(geography = "county",
